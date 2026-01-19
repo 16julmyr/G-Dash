@@ -2,229 +2,365 @@
 <html lang="no">
 <head>
 <meta charset="UTF-8">
-<title>Geometry Dash Mini+</title>
+<title>Geometry Dash – Pro Edition</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <style>
-    body {
-        margin: 0;
-        background: radial-gradient(circle at top, #222, #000);
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        font-family: Arial, sans-serif;
-        color: white;
-        overflow: hidden;
-    }
-    canvas {
-        background: linear-gradient(#1a1a1a, #000);
-        border: 3px solid #0ff;
-        max-width: 100%;
-        touch-action: manipulation;
-    }
-    #info {
-        position: absolute;
-        top: 10px;
-        width: 100%;
-        text-align: center;
-        font-size: 16px;
-        opacity: 0.9;
-    }
+/* ===================== GLOBAL ===================== */
+* {
+    box-sizing: border-box;
+    user-select: none;
+}
+
+body {
+    margin: 0;
+    background: radial-gradient(circle at top, #1e1e1e, #000);
+    font-family: Arial, Helvetica, sans-serif;
+    overflow: hidden;
+    color: white;
+}
+
+/* ===================== UI ===================== */
+.screen {
+    position: absolute;
+    inset: 0;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    background: rgba(0,0,0,0.6);
+    z-index: 10;
+}
+
+.screen.active {
+    display: flex;
+}
+
+button {
+    padding: 12px 30px;
+    margin: 10px;
+    font-size: 18px;
+    border: none;
+    border-radius: 6px;
+    background: #00ffff;
+    color: #000;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #00cccc;
+}
+
+label {
+    margin-top: 15px;
+}
+
+/* ===================== CANVAS ===================== */
+canvas {
+    display: block;
+    margin: auto;
+    background: linear-gradient(#1a1a1a, #000);
+    border: 3px solid #00ffff;
+}
 </style>
 </head>
 <body>
 
-<div id="info">Trykk / Space / Touch for å hoppe</div>
-<canvas id="game" width="800" height="300"></canvas>
+<!-- ===================== MENYER ===================== -->
+<div id="menu" class="screen active">
+    <h1>Geometry Dash – Pro</h1>
+    <button onclick="startGame()">Start</button>
+    <button onclick="openSettings()">Settings</button>
+</div>
+
+<div id="pause" class="screen">
+    <h2>Pause</h2>
+    <button onclick="resumeGame()">Fortsett</button>
+    <button onclick="openSettings()">Settings</button>
+    <button onclick="backToMenu()">Meny</button>
+</div>
+
+<div id="settings" class="screen">
+    <h2>Settings</h2>
+
+    <label>
+        Musikk
+        <input type="range" min="0" max="1" step="0.01" value="0.3"
+               onchange="music.volume = this.value">
+    </label>
+
+    <label>
+        Lydeffekter
+        <input type="range" min="0" max="1" step="0.01" value="0.7"
+               onchange="sfxVolume = this.value">
+    </label>
+
+    <button onclick="closeSettings()">Tilbake</button>
+</div>
+
+<canvas id="game" width="900" height="300"></canvas>
 
 <script>
+/* ===================== CANVAS ===================== */
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-let gravity = 0.6;
-let jumpPower = -12;
-let baseSpeed = 4;
-let speed = baseSpeed;
-let gameOver = false;
-let score = 0;
-let level = 1;
-let highscore = localStorage.getItem("gd_highscore") || 0;
+/* ===================== AUDIO ===================== */
+let sfxVolume = 0.7;
 
-// 🔊 LYD
 const jumpSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 const crashSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
 const music = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_75e8c8f6d7.mp3");
 music.loop = true;
 music.volume = 0.3;
 
+/* ===================== GAME STATE ===================== */
+let gameRunning = false;
+let paused = false;
+
+/* ===================== PLAYER ===================== */
 const player = {
-    x: 80,
-    y: 220,
+    x: 120,
+    y: 210,
     size: 30,
-    yVel: 0,
-    onGround: true,
-    rotation: 0
+    velY: 0,
+    gravity: 0.7,
+    jumpForce: -13,
+    rotation: 0,
+    onGround: false,
+    coyote: 0,
+    buffer: 0
 };
 
-let obstacles = [];
+const COYOTE_TIME = 8;
+const BUFFER_TIME = 8;
 
-function spawnObstacle() {
-    const type = Math.random();
-    if (type < 0.5) {
-        // Normal blokk
-        obstacles.push({
-            type: "block",
-            x: canvas.width,
-            y: 240,
-            w: 30,
-            h: 40
-        });
-    } else {
-        // Spiss trekant
-        obstacles.push({
-            type: "spike",
-            x: canvas.width,
-            y: 260,
-            size: 30
-        });
-    }
-}
+/* ===================== WORLD ===================== */
+let speed = 4;
+let gravityDirection = 1; // 1 = normal, -1 = inverted
+let scrollX = 0;
 
-function resetGame() {
-    obstacles = [];
-    player.y = 220;
-    player.yVel = 0;
-    player.rotation = 0;
-    gameOver = false;
-    score = 0;
-    level = 1;
-    speed = baseSpeed;
-    music.currentTime = 0;
-    music.play();
-}
+/* ===================== LEVEL DESIGN ===================== */
+/*
+type:
+block      = vanlig blokk
+spike      = spike
+portalG    = gravity portal
+portalS    = speed portal
+*/
 
-function jump() {
-    if (player.onGround && !gameOver) {
-        player.yVel = jumpPower;
-        player.onGround = false;
-        jumpSound.play();
-    }
-    if (gameOver) resetGame();
+const level = [
+    { x: 600, type: "spike" },
+    { x: 750, type: "spike" },
+    { x: 900, type: "block", h: 50 },
+
+    { x: 1150, type: "portalG" },
+    { x: 1300, type: "spike" },
+    { x: 1450, type: "spike" },
+
+    { x: 1700, type: "portalS", speed: 6 },
+    { x: 1900, type: "block", h: 70 },
+    { x: 2150, type: "spike" },
+    { x: 2300, type: "spike" },
+
+    { x: 2600, type: "portalG" },
+    { x: 2800, type: "block", h: 60 },
+    { x: 3000, type: "spike" }
+];
+
+/* ===================== INPUT ===================== */
+function jumpRequest() {
+    player.buffer = BUFFER_TIME;
 }
 
 document.addEventListener("keydown", e => {
-    if (e.code === "Space") jump();
+    if (e.code === "Space") {
+        if (!gameRunning) return;
+        if (paused) resumeGame();
+        else jumpRequest();
+    }
+    if (e.code === "Escape") togglePause();
 });
-canvas.addEventListener("mousedown", jump);
-canvas.addEventListener("touchstart", jump);
 
-function update() {
-    if (gameOver) return;
+canvas.addEventListener("mousedown", jumpRequest);
+canvas.addEventListener("touchstart", jumpRequest);
 
-    // Level progression
-    level = Math.floor(score / 500) + 1;
-    speed = baseSpeed + level * 0.5;
+/* ===================== GAME FLOW ===================== */
+function startGame() {
+    document.getElementById("menu").classList.remove("active");
+    resetGame();
+    gameRunning = true;
+    music.play();
+}
 
-    // Player physics
-    player.yVel += gravity;
-    player.y += player.yVel;
-    player.rotation += 0.15;
+function resetGame() {
+    scrollX = 0;
+    speed = 4;
+    gravityDirection = 1;
+    player.y = 210;
+    player.velY = 0;
+}
 
-    if (player.y >= 220) {
-        player.y = 220;
-        player.yVel = 0;
+function togglePause() {
+    if (!gameRunning) return;
+    paused = !paused;
+    document.getElementById("pause").classList.toggle("active", paused);
+}
+
+function resumeGame() {
+    paused = false;
+    document.getElementById("pause").classList.remove("active");
+}
+
+function backToMenu() {
+    paused = false;
+    gameRunning = false;
+    music.pause();
+    document.getElementById("pause").classList.remove("active");
+    document.getElementById("menu").classList.add("active");
+}
+
+function openSettings() {
+    document.getElementById("settings").classList.add("active");
+}
+
+function closeSettings() {
+    document.getElementById("settings").classList.remove("active");
+}
+
+/* ===================== UPDATE ===================== */
+function updatePlayer() {
+    player.velY += player.gravity * gravityDirection;
+    player.y += player.velY;
+    player.rotation += 0.15 * gravityDirection;
+
+    const groundY = gravityDirection === 1 ? 210 : 30;
+
+    if ((gravityDirection === 1 && player.y >= groundY) ||
+        (gravityDirection === -1 && player.y <= groundY)) {
+
+        player.y = groundY;
+        player.velY = 0;
         player.onGround = true;
+        player.coyote = COYOTE_TIME;
         player.rotation = 0;
+    } else {
+        player.onGround = false;
+        player.coyote--;
     }
 
-    obstacles.forEach(o => o.x -= speed);
-    obstacles = obstacles.filter(o => o.x + 50 > 0);
+    if (player.buffer > 0 && player.coyote > 0) {
+        player.velY = player.jumpForce * gravityDirection;
+        player.buffer = 0;
+        player.coyote = 0;
+        jumpSound.volume = sfxVolume;
+        jumpSound.play();
+    }
 
-    if (Math.random() < 0.02) spawnObstacle();
+    player.buffer--;
+}
 
-    // Collision
-    obstacles.forEach(o => {
+function updateLevel() {
+    scrollX += speed;
+}
+
+function checkCollision() {
+    for (let o of level) {
+        let x = o.x - scrollX;
+
         if (o.type === "block") {
+            let y = gravityDirection === 1 ? 260 - o.h : 0;
             if (
-                player.x < o.x + o.w &&
-                player.x + player.size > o.x &&
-                player.y < o.y + o.h &&
-                player.y + player.size > o.y
-            ) endGame();
-        } else {
-            if (
-                player.x + player.size > o.x &&
-                player.x < o.x + o.size &&
-                player.y + player.size > o.y - o.size
+                player.x < x + 40 &&
+                player.x + player.size > x &&
+                player.y < y + o.h &&
+                player.y + player.size > y
             ) endGame();
         }
-    });
 
-    score++;
+        if (o.type === "spike") {
+            if (
+                player.x + player.size > x &&
+                player.x < x + 30 &&
+                player.y + player.size > 230 &&
+                gravityDirection === 1
+            ) endGame();
+        }
+
+        if (o.type === "portalG" && Math.abs(x - player.x) < 20) {
+            gravityDirection *= -1;
+        }
+
+        if (o.type === "portalS" && Math.abs(x - player.x) < 20) {
+            speed = o.speed;
+        }
+    }
 }
 
 function endGame() {
-    gameOver = true;
+    crashSound.volume = sfxVolume;
     crashSound.play();
-    music.pause();
-    if (score > highscore) {
-        highscore = score;
-        localStorage.setItem("gd_highscore", highscore);
-    }
+    backToMenu();
 }
 
+/* ===================== DRAW ===================== */
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
 
     // Ground
-    ctx.fillStyle = "#0ff";
-    ctx.fillRect(0, 260, canvas.width, 5);
+    ctx.fillStyle = "#00ffff";
+    ctx.fillRect(0,260,canvas.width,4);
+    ctx.fillRect(0,0,canvas.width,4);
 
-    // Player (roterende kube)
+    // Player
     ctx.save();
-    ctx.translate(player.x + player.size/2, player.y + player.size/2);
+    ctx.translate(player.x + 15, player.y + 15);
     ctx.rotate(player.rotation);
-    ctx.fillStyle = "#f0f";
-    ctx.fillRect(-15, -15, 30, 30);
+    ctx.fillStyle = "#ff00ff";
+    ctx.fillRect(-15,-15,30,30);
     ctx.restore();
 
-    // Obstacles
-    obstacles.forEach(o => {
+    // Level
+    for (let o of level) {
+        let x = o.x - scrollX;
+
         if (o.type === "block") {
-            ctx.fillStyle = "#f00";
-            ctx.fillRect(o.x, o.y, o.w, o.h);
-        } else {
-            ctx.fillStyle = "#ff0";
+            ctx.fillStyle = "#ff0000";
+            ctx.fillRect(x, 260 - o.h, 40, o.h);
+        }
+
+        if (o.type === "spike") {
+            ctx.fillStyle = "#ffff00";
             ctx.beginPath();
-            ctx.moveTo(o.x, o.y);
-            ctx.lineTo(o.x + o.size/2, o.y - o.size);
-            ctx.lineTo(o.x + o.size, o.y);
-            ctx.closePath();
+            ctx.moveTo(x,260);
+            ctx.lineTo(x+15,230);
+            ctx.lineTo(x+30,260);
             ctx.fill();
         }
-    });
 
-    // HUD
-    ctx.fillStyle = "#fff";
-    ctx.fillText("Score: " + score, 10, 20);
-    ctx.fillText("Level: " + level, 10, 40);
-    ctx.fillText("Highscore: " + highscore, 10, 60);
+        if (o.type === "portalG") {
+            ctx.strokeStyle = "#00ff00";
+            ctx.strokeRect(x,180,30,60);
+        }
 
-    if (gameOver) {
-        ctx.font = "30px Arial";
-        ctx.fillText("GAME OVER", 300, 140);
-        ctx.font = "16px Arial";
-        ctx.fillText("Trykk for å starte på nytt", 300, 170);
+        if (o.type === "portalS") {
+            ctx.strokeStyle = "#ff00ff";
+            ctx.strokeRect(x,180,30,60);
+        }
     }
 }
 
+/* ===================== LOOP ===================== */
 function loop() {
-    update();
-    draw();
+    if (gameRunning && !paused) {
+        updatePlayer();
+        updateLevel();
+        checkCollision();
+        draw();
+    }
     requestAnimationFrame(loop);
 }
 
-music.play();
 loop();
 </script>
 </body>
