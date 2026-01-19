@@ -2,18 +2,27 @@
 <html lang="no">
 <head>
 <meta charset="UTF-8">
-<title>Geometry Dash – Pro v2</title>
+<title>Geometry Dash – Pro v3</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
 * { box-sizing: border-box; user-select: none; }
 body {
     margin: 0;
-    background: radial-gradient(circle at top, #1e1e1e, #000);
-    font-family: Arial, Helvetica, sans-serif;
     overflow: hidden;
+    font-family: Arial, Helvetica, sans-serif;
     color: white;
+    background: linear-gradient(135deg, #1e1e1e, #3b1a59, #004d4d);
+    background-size: 400% 400%;
+    animation: bgAnim 20s ease infinite;
 }
+
+@keyframes bgAnim {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
 .screen {
     position: absolute;
     inset: 0;
@@ -39,16 +48,14 @@ button:hover { background: #00cccc; }
 canvas {
     display: block;
     margin: auto;
-    background: linear-gradient(#1a1a1a, #000);
     border: 3px solid #00ffff;
 }
 </style>
 </head>
 
 <body>
-
 <div id="menu" class="screen active">
-    <h1>Geometry Dash – Pro v2</h1>
+    <h1>Geometry Dash – Pro v3</h1>
     <button onclick="startGame()">Start</button>
 </div>
 
@@ -56,6 +63,12 @@ canvas {
     <h2>Pause</h2>
     <button onclick="resumeGame()">Fortsett</button>
     <button onclick="backToMenu()">Meny</button>
+</div>
+
+<div id="endScreen" class="screen">
+    <h2>Level Complete!</h2>
+    <button onclick="restartGame()">Restart Level</button>
+    <button onclick="backToMenu()">Menu</button>
 </div>
 
 <canvas id="game" width="900" height="300"></canvas>
@@ -74,272 +87,135 @@ music.loop = true;
 music.volume = 0.3;
 
 /* ===================== GAME STATE ===================== */
-const STATE = { MENU:0, PLAY:1, PAUSE:2 };
+const STATE = { MENU:0, PLAY:1, PAUSE:2, END:3 };
 let gameState = STATE.MENU;
 
 /* ===================== PLAYER ===================== */
-const player = {
-    x: 120, y: 210, size: 30,
-    velY: 0, gravity: 0.7,
-    jumpForce: -13,
-    rotation: 0,
-    coyote: 0, buffer: 0
-};
-const COYOTE_TIME = 8;
-const BUFFER_TIME = 8;
+const player = { x:120, y:210, size:30, velY:0, gravity:0.7, jumpForce:-13, rotation:0, coyote:0, buffer:0 };
+const COYOTE_TIME=8, BUFFER_TIME=8;
 
 /* ===================== WORLD ===================== */
-let gravityDirection = 1;
-let speed = 4;
-let speedTimer = 0;
-let scrollX = 0;
+let gravityDirection=1, speed=4, speedTimer=0, scrollX=0;
 
 /* ===================== PARTICLES ===================== */
-let particles = [];
+let particles=[];
 
 /* ===================== LEVEL ===================== */
 const LEVEL_LENGTH = 3200;
 const level = [
     { x: 600, type:"spike" },
-    { x: 750, type:"spike" },
     { x: 900, type:"block", h:50 },
     { x: 1150, type:"portalG" },
     { x: 1300, type:"spike" },
-    { x: 1450, type:"spike" },
     { x: 1700, type:"portalS", speed:6 },
     { x: 1900, type:"block", h:70 },
-    { x: 2150, type:"spike" },
+    { x: 2300, type:"spike" },
     { x: 2600, type:"portalG" },
     { x: 2800, type:"block", h:60 },
-    { x: 3000, type:"spike" }
+    { x: 3000, type:"spike" },
+    { x: 3200, type:"portalEnd" } // sluttportal
 ];
 
 /* ===================== INPUT ===================== */
-function jumpRequest() {
-    player.buffer = BUFFER_TIME;
-}
-
+function jumpRequest(){ player.buffer=BUFFER_TIME; }
 document.addEventListener("keydown", e => {
-    if (e.code === "Space") jumpRequest();
-    if (e.code === "Escape") togglePause();
-    if (e.code === "KeyR" && gameState === STATE.PLAY) resetGame();
+    if(e.code==="Space" && gameState===STATE.PLAY) jumpRequest();
+    if(e.code==="Escape" && gameState===STATE.PLAY) togglePause();
+    if(e.code==="KeyR" && gameState===STATE.PLAY) restartGame();
 });
-
 canvas.addEventListener("mousedown", jumpRequest);
-canvas.addEventListener("touchstart", e => {
-    e.preventDefault();
-    jumpRequest();
-}, { passive:false });
+canvas.addEventListener("touchstart", e=>{ e.preventDefault(); jumpRequest(); }, {passive:false});
 
 /* ===================== FLOW ===================== */
-function startGame() {
-    document.getElementById("menu").classList.remove("active");
-    resetGame();
-    gameState = STATE.PLAY;
-    music.play();
+function startGame(){ document.getElementById("menu").classList.remove("active"); resetGame(); gameState=STATE.PLAY; music.play();}
+function resetGame(){
+    scrollX=0; speed=4; speedTimer=0; gravityDirection=1;
+    player.y=210; player.velY=0; player.rotation=0; player.coyote=0; player.buffer=0;
+    particles=[]; level.forEach(o=>o.used=false);
+    document.getElementById("endScreen").classList.remove("active");
 }
-
-function resetGame() {
-    scrollX = 0;
-    speed = 4;
-    speedTimer = 0;
-    gravityDirection = 1;
-
-    player.y = 210;
-    player.velY = 0;
-    player.rotation = 0;
-    player.coyote = 0;
-    player.buffer = 0;
-
-    particles = [];
-    level.forEach(o => o.used = false);
-}
-
-function togglePause() {
-    if (gameState !== STATE.PLAY) return;
-    gameState = STATE.PAUSE;
-    document.getElementById("pause").classList.add("active");
-}
-
-function resumeGame() {
-    gameState = STATE.PLAY;
-    document.getElementById("pause").classList.remove("active");
-}
-
-function backToMenu() {
-    gameState = STATE.MENU;
-    music.pause();
-    document.getElementById("pause").classList.remove("active");
-    document.getElementById("menu").classList.add("active");
-}
+function restartGame(){ resetGame(); gameState=STATE.PLAY; music.play();}
+function togglePause(){ gameState=STATE.PAUSE; document.getElementById("pause").classList.add("active"); }
+function resumeGame(){ gameState=STATE.PLAY; document.getElementById("pause").classList.remove("active"); }
+function backToMenu(){ gameState=STATE.MENU; music.pause(); document.getElementById("pause").classList.remove("active"); document.getElementById("menu").classList.add("active"); }
 
 /* ===================== UPDATE ===================== */
-function updatePlayer() {
+function updatePlayer(){
     player.velY += player.gravity * gravityDirection;
     player.y += player.velY;
     player.rotation += 0.15 * gravityDirection;
-
-    const groundY = gravityDirection === 1 ? 210 : 30;
-
-    if (
-        (gravityDirection === 1 && player.y >= groundY) ||
-        (gravityDirection === -1 && player.y <= groundY)
-    ) {
-        player.y = groundY;
-        player.velY = 0;
-        player.coyote = COYOTE_TIME;
-        player.rotation = 0;
-    } else {
-        player.coyote = Math.max(0, player.coyote - 1);
-    }
-
-    if (player.buffer > 0 && player.coyote > 0) {
-        player.velY = player.jumpForce * gravityDirection;
-        player.buffer = 0;
-        player.coyote = 0;
-        jumpSound.volume = sfxVolume;
-        jumpSound.play();
-    }
-
-    player.buffer = Math.max(0, player.buffer - 1);
+    const groundY = gravityDirection===1 ? 210:30;
+    if((gravityDirection===1 && player.y>=groundY)||(gravityDirection===-1 && player.y<=groundY)){
+        player.y=groundY; player.velY=0; player.coyote=COYOTE_TIME; player.rotation=0;
+    } else player.coyote=Math.max(0, player.coyote-1);
+    if(player.buffer>0 && player.coyote>0){ player.velY=player.jumpForce*gravityDirection; player.buffer=0; player.coyote=0; jumpSound.volume=sfxVolume; jumpSound.play(); }
+    player.buffer=Math.max(0, player.buffer-1);
 }
-
-function updateLevel() {
-    scrollX += speed;
-    if (speedTimer > 0) speedTimer--;
-    else speed = 4;
+function updateLevel(){
+    scrollX+=speed;
+    if(speedTimer>0) speedTimer--; else speed=4;
 }
-
-function spawnParticles() {
-    for (let i=0;i<20;i++) {
-        particles.push({
-            x: player.x+15,
-            y: player.y+15,
-            vx:(Math.random()-0.5)*6,
-            vy:(Math.random()-0.5)*6,
-            life:30
-        });
-    }
-}
-
-function updateParticles() {
-    particles = particles.filter(p => p.life-- > 0);
-    particles.forEach(p => {
-        p.x += p.vx;
-        p.y += p.vy;
-    });
-}
+function spawnParticles(){ for(let i=0;i<20;i++){ particles.push({x:player.x+15,y:player.y+15,vx:(Math.random()-0.5)*6,vy:(Math.random()-0.5)*6,life:30}); } }
+function updateParticles(){ particles=particles.filter(p=>p.life-->0); particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;}); }
 
 /* ===================== COLLISION ===================== */
-function checkCollision() {
-    for (let o of level) {
-        let x = o.x - scrollX;
-
-        if (o.type === "block") {
-            let y = gravityDirection === 1 ? 260-o.h : 0;
-            if (
-                player.x < x+40 &&
-                player.x+30 > x &&
-                player.y < y+o.h &&
-                player.y+30 > y
-            ) endGame();
+function checkCollision(){
+    for(let o of level){
+        let x=o.x-scrollX;
+        if(o.type==="block"){
+            let y=gravityDirection===1 ? 260-o.h:0;
+            if(player.x< x+40 && player.x+30> x && player.y< y+o.h && player.y+30>y) endGame();
         }
-
-        if (o.type === "spike") {
-            const spikeY = gravityDirection === 1 ? 230 : 0;
-            if (
-                player.x < x+30 &&
-                player.x+30 > x &&
-                player.y < spikeY+30 &&
-                player.y+30 > spikeY
-            ) endGame();
+        if(o.type==="spike"){
+            const spikeY=gravityDirection===1 ? 230:0;
+            if(player.x< x+30 && player.x+30> x && player.y< spikeY+30 && player.y+30>spikeY) endGame();
         }
-
-        if (o.type === "portalG" && !o.used && Math.abs(x-player.x)<20) {
-            gravityDirection *= -1;
-            o.used = true;
-        }
-
-        if (o.type === "portalS" && !o.used && Math.abs(x-player.x)<20) {
-            speed = o.speed;
-            speedTimer = 300;
-            o.used = true;
-        }
+        if(o.type==="portalG" && !o.used && Math.abs(x-player.x)<20){ gravityDirection*=-1; o.used=true; }
+        if(o.type==="portalS" && !o.used && Math.abs(x-player.x)<20){ speed=o.speed; speedTimer=300; o.used=true; }
+        if(o.type==="portalEnd" && Math.abs(x-player.x)<20){ reachEndPortal(); o.used=true; }
     }
 }
 
-function endGame() {
-    crashSound.volume = sfxVolume;
-    crashSound.play();
-    spawnParticles();
-    gameState = STATE.MENU;
-    music.pause();
-    document.getElementById("menu").classList.add("active");
+function reachEndPortal(){
+    // dra spilleren inn
+    let interval = setInterval(()=>{
+        player.x+=2; player.y+=gravityDirection*2;
+        spawnParticles();
+        if(player.x>canvas.width/2){ clearInterval(interval); showEndScreen(); }
+    },16);
 }
+
+function showEndScreen(){ gameState=STATE.END; document.getElementById("endScreen").classList.add("active"); music.pause(); }
+function endGame(){ crashSound.volume=sfxVolume; crashSound.play(); spawnParticles(); gameState=STATE.MENU; music.pause(); document.getElementById("menu").classList.add("active"); }
 
 /* ===================== DRAW ===================== */
-function drawProgress() {
-    const p = Math.min(scrollX / LEVEL_LENGTH, 1);
-    ctx.fillStyle = "#222";
-    ctx.fillRect(0,0,canvas.width,6);
-    ctx.fillStyle = "#00ffff";
-    ctx.fillRect(0,0,canvas.width*p,6);
+function drawProgress(){
+    const p=Math.min(scrollX/LEVEL_LENGTH,1);
+    ctx.fillStyle="#222"; ctx.fillRect(0,0,canvas.width,6);
+    ctx.fillStyle="#00ffff"; ctx.fillRect(0,0,canvas.width*p,6);
 }
 
-function draw() {
+function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
     drawProgress();
+    ctx.fillStyle="#00ffff"; ctx.fillRect(0,260,canvas.width,4); ctx.fillRect(0,0,canvas.width,4);
+    ctx.save(); ctx.translate(player.x+15,player.y+15); ctx.rotate(player.rotation); ctx.fillStyle="#ff00ff"; ctx.fillRect(-15,-15,30,30); ctx.restore();
 
-    ctx.fillStyle="#00ffff";
-    ctx.fillRect(0,260,canvas.width,4);
-    ctx.fillRect(0,0,canvas.width,4);
-
-    ctx.save();
-    ctx.translate(player.x+15, player.y+15);
-    ctx.rotate(player.rotation);
-    ctx.fillStyle="#ff00ff";
-    ctx.fillRect(-15,-15,30,30);
-    ctx.restore();
-
-    for (let o of level) {
-        let x = o.x - scrollX;
-
-        if (o.type==="block") {
-            ctx.fillStyle="#ff0000";
-            ctx.fillRect(x,260-o.h,40,o.h);
-        }
-        if (o.type==="spike") {
-            ctx.fillStyle="#ffff00";
-            ctx.beginPath();
-            ctx.moveTo(x,260);
-            ctx.lineTo(x+15,230);
-            ctx.lineTo(x+30,260);
-            ctx.fill();
-        }
-        if (o.type==="portalG") {
-            ctx.strokeStyle="#00ff00";
-            ctx.strokeRect(x,180,30,60);
-        }
-        if (o.type==="portalS") {
-            ctx.strokeStyle="#ff00ff";
-            ctx.strokeRect(x,180,30,60);
-        }
+    for(let o of level){
+        let x=o.x-scrollX;
+        if(o.type==="block"){ ctx.fillStyle="#ff0000"; ctx.fillRect(x,260-o.h,40,o.h);}
+        if(o.type==="spike"){ ctx.fillStyle="#ffff00"; ctx.beginPath(); ctx.moveTo(x,260); ctx.lineTo(x+15,230); ctx.lineTo(x+30,260); ctx.fill();}
+        if(o.type==="portalG"){ ctx.strokeStyle="#00ff00"; ctx.strokeRect(x,180,30,60);}
+        if(o.type==="portalS"){ ctx.strokeStyle="#ff00ff"; ctx.strokeRect(x,180,30,60);}
+        if(o.type==="portalEnd"){ ctx.strokeStyle="#ffffff"; ctx.lineWidth=3; ctx.strokeRect(x,180,30,60); ctx.lineWidth=1;}
     }
 
-    ctx.fillStyle="#ff00ff";
-    particles.forEach(p => ctx.fillRect(p.x,p.y,4,4));
+    ctx.fillStyle="#ff00ff"; particles.forEach(p=>ctx.fillRect(p.x,p.y,4,4));
 }
 
 /* ===================== LOOP ===================== */
-function loop() {
-    if (gameState === STATE.PLAY) {
-        updatePlayer();
-        updateLevel();
-        updateParticles();
-        checkCollision();
-        draw();
-    }
+function loop(){
+    if(gameState===STATE.PLAY){ updatePlayer(); updateLevel(); updateParticles(); checkCollision(); draw(); }
     requestAnimationFrame(loop);
 }
 loop();
