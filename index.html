@@ -2,16 +2,11 @@
 <html lang="no">
 <head>
 <meta charset="UTF-8">
-<title>Geometry Dash – Pro Edition</title>
+<title>Geometry Dash – Pro v2</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-/* ===================== GLOBAL ===================== */
-* {
-    box-sizing: border-box;
-    user-select: none;
-}
-
+* { box-sizing: border-box; user-select: none; }
 body {
     margin: 0;
     background: radial-gradient(circle at top, #1e1e1e, #000);
@@ -19,8 +14,6 @@ body {
     overflow: hidden;
     color: white;
 }
-
-/* ===================== UI ===================== */
 .screen {
     position: absolute;
     inset: 0;
@@ -28,14 +21,10 @@ body {
     justify-content: center;
     align-items: center;
     flex-direction: column;
-    background: rgba(0,0,0,0.6);
+    background: rgba(0,0,0,0.7);
     z-index: 10;
 }
-
-.screen.active {
-    display: flex;
-}
-
+.screen.active { display: flex; }
 button {
     padding: 12px 30px;
     margin: 10px;
@@ -46,16 +35,7 @@ button {
     color: #000;
     cursor: pointer;
 }
-
-button:hover {
-    background: #00cccc;
-}
-
-label {
-    margin-top: 15px;
-}
-
-/* ===================== CANVAS ===================== */
+button:hover { background: #00cccc; }
 canvas {
     display: block;
     margin: auto;
@@ -64,38 +44,18 @@ canvas {
 }
 </style>
 </head>
+
 <body>
 
-<!-- ===================== MENYER ===================== -->
 <div id="menu" class="screen active">
-    <h1>Geometry Dash – Pro</h1>
+    <h1>Geometry Dash – Pro v2</h1>
     <button onclick="startGame()">Start</button>
-    <button onclick="openSettings()">Settings</button>
 </div>
 
 <div id="pause" class="screen">
     <h2>Pause</h2>
     <button onclick="resumeGame()">Fortsett</button>
-    <button onclick="openSettings()">Settings</button>
     <button onclick="backToMenu()">Meny</button>
-</div>
-
-<div id="settings" class="screen">
-    <h2>Settings</h2>
-
-    <label>
-        Musikk
-        <input type="range" min="0" max="1" step="0.01" value="0.3"
-               onchange="music.volume = this.value">
-    </label>
-
-    <label>
-        Lydeffekter
-        <input type="range" min="0" max="1" step="0.01" value="0.7"
-               onchange="sfxVolume = this.value">
-    </label>
-
-    <button onclick="closeSettings()">Tilbake</button>
 </div>
 
 <canvas id="game" width="900" height="300"></canvas>
@@ -107,7 +67,6 @@ const ctx = canvas.getContext("2d");
 
 /* ===================== AUDIO ===================== */
 let sfxVolume = 0.7;
-
 const jumpSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
 const crashSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
 const music = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_75e8c8f6d7.mp3");
@@ -115,57 +74,44 @@ music.loop = true;
 music.volume = 0.3;
 
 /* ===================== GAME STATE ===================== */
-let gameRunning = false;
-let paused = false;
+const STATE = { MENU:0, PLAY:1, PAUSE:2 };
+let gameState = STATE.MENU;
 
 /* ===================== PLAYER ===================== */
 const player = {
-    x: 120,
-    y: 210,
-    size: 30,
-    velY: 0,
-    gravity: 0.7,
+    x: 120, y: 210, size: 30,
+    velY: 0, gravity: 0.7,
     jumpForce: -13,
     rotation: 0,
-    onGround: false,
-    coyote: 0,
-    buffer: 0
+    coyote: 0, buffer: 0
 };
-
 const COYOTE_TIME = 8;
 const BUFFER_TIME = 8;
 
 /* ===================== WORLD ===================== */
+let gravityDirection = 1;
 let speed = 4;
-let gravityDirection = 1; // 1 = normal, -1 = inverted
+let speedTimer = 0;
 let scrollX = 0;
 
-/* ===================== LEVEL DESIGN ===================== */
-/*
-type:
-block      = vanlig blokk
-spike      = spike
-portalG    = gravity portal
-portalS    = speed portal
-*/
+/* ===================== PARTICLES ===================== */
+let particles = [];
 
+/* ===================== LEVEL ===================== */
+const LEVEL_LENGTH = 3200;
 const level = [
-    { x: 600, type: "spike" },
-    { x: 750, type: "spike" },
-    { x: 900, type: "block", h: 50 },
-
-    { x: 1150, type: "portalG" },
-    { x: 1300, type: "spike" },
-    { x: 1450, type: "spike" },
-
-    { x: 1700, type: "portalS", speed: 6 },
-    { x: 1900, type: "block", h: 70 },
-    { x: 2150, type: "spike" },
-    { x: 2300, type: "spike" },
-
-    { x: 2600, type: "portalG" },
-    { x: 2800, type: "block", h: 60 },
-    { x: 3000, type: "spike" }
+    { x: 600, type:"spike" },
+    { x: 750, type:"spike" },
+    { x: 900, type:"block", h:50 },
+    { x: 1150, type:"portalG" },
+    { x: 1300, type:"spike" },
+    { x: 1450, type:"spike" },
+    { x: 1700, type:"portalS", speed:6 },
+    { x: 1900, type:"block", h:70 },
+    { x: 2150, type:"spike" },
+    { x: 2600, type:"portalG" },
+    { x: 2800, type:"block", h:60 },
+    { x: 3000, type:"spike" }
 ];
 
 /* ===================== INPUT ===================== */
@@ -174,58 +120,57 @@ function jumpRequest() {
 }
 
 document.addEventListener("keydown", e => {
-    if (e.code === "Space") {
-        if (!gameRunning) return;
-        if (paused) resumeGame();
-        else jumpRequest();
-    }
+    if (e.code === "Space") jumpRequest();
     if (e.code === "Escape") togglePause();
+    if (e.code === "KeyR" && gameState === STATE.PLAY) resetGame();
 });
 
 canvas.addEventListener("mousedown", jumpRequest);
-canvas.addEventListener("touchstart", jumpRequest);
+canvas.addEventListener("touchstart", e => {
+    e.preventDefault();
+    jumpRequest();
+}, { passive:false });
 
-/* ===================== GAME FLOW ===================== */
+/* ===================== FLOW ===================== */
 function startGame() {
     document.getElementById("menu").classList.remove("active");
     resetGame();
-    gameRunning = true;
+    gameState = STATE.PLAY;
     music.play();
 }
 
 function resetGame() {
     scrollX = 0;
     speed = 4;
+    speedTimer = 0;
     gravityDirection = 1;
+
     player.y = 210;
     player.velY = 0;
+    player.rotation = 0;
+    player.coyote = 0;
+    player.buffer = 0;
+
+    particles = [];
+    level.forEach(o => o.used = false);
 }
 
 function togglePause() {
-    if (!gameRunning) return;
-    paused = !paused;
-    document.getElementById("pause").classList.toggle("active", paused);
+    if (gameState !== STATE.PLAY) return;
+    gameState = STATE.PAUSE;
+    document.getElementById("pause").classList.add("active");
 }
 
 function resumeGame() {
-    paused = false;
+    gameState = STATE.PLAY;
     document.getElementById("pause").classList.remove("active");
 }
 
 function backToMenu() {
-    paused = false;
-    gameRunning = false;
+    gameState = STATE.MENU;
     music.pause();
     document.getElementById("pause").classList.remove("active");
     document.getElementById("menu").classList.add("active");
-}
-
-function openSettings() {
-    document.getElementById("settings").classList.add("active");
-}
-
-function closeSettings() {
-    document.getElementById("settings").classList.remove("active");
 }
 
 /* ===================== UPDATE ===================== */
@@ -236,17 +181,16 @@ function updatePlayer() {
 
     const groundY = gravityDirection === 1 ? 210 : 30;
 
-    if ((gravityDirection === 1 && player.y >= groundY) ||
-        (gravityDirection === -1 && player.y <= groundY)) {
-
+    if (
+        (gravityDirection === 1 && player.y >= groundY) ||
+        (gravityDirection === -1 && player.y <= groundY)
+    ) {
         player.y = groundY;
         player.velY = 0;
-        player.onGround = true;
         player.coyote = COYOTE_TIME;
         player.rotation = 0;
     } else {
-        player.onGround = false;
-        player.coyote--;
+        player.coyote = Math.max(0, player.coyote - 1);
     }
 
     if (player.buffer > 0 && player.coyote > 0) {
@@ -257,42 +201,69 @@ function updatePlayer() {
         jumpSound.play();
     }
 
-    player.buffer--;
+    player.buffer = Math.max(0, player.buffer - 1);
 }
 
 function updateLevel() {
     scrollX += speed;
+    if (speedTimer > 0) speedTimer--;
+    else speed = 4;
 }
 
+function spawnParticles() {
+    for (let i=0;i<20;i++) {
+        particles.push({
+            x: player.x+15,
+            y: player.y+15,
+            vx:(Math.random()-0.5)*6,
+            vy:(Math.random()-0.5)*6,
+            life:30
+        });
+    }
+}
+
+function updateParticles() {
+    particles = particles.filter(p => p.life-- > 0);
+    particles.forEach(p => {
+        p.x += p.vx;
+        p.y += p.vy;
+    });
+}
+
+/* ===================== COLLISION ===================== */
 function checkCollision() {
     for (let o of level) {
         let x = o.x - scrollX;
 
         if (o.type === "block") {
-            let y = gravityDirection === 1 ? 260 - o.h : 0;
+            let y = gravityDirection === 1 ? 260-o.h : 0;
             if (
-                player.x < x + 40 &&
-                player.x + player.size > x &&
-                player.y < y + o.h &&
-                player.y + player.size > y
+                player.x < x+40 &&
+                player.x+30 > x &&
+                player.y < y+o.h &&
+                player.y+30 > y
             ) endGame();
         }
 
         if (o.type === "spike") {
+            const spikeY = gravityDirection === 1 ? 230 : 0;
             if (
-                player.x + player.size > x &&
-                player.x < x + 30 &&
-                player.y + player.size > 230 &&
-                gravityDirection === 1
+                player.x < x+30 &&
+                player.x+30 > x &&
+                player.y < spikeY+30 &&
+                player.y+30 > spikeY
             ) endGame();
         }
 
-        if (o.type === "portalG" && Math.abs(x - player.x) < 20) {
+        if (o.type === "portalG" && !o.used && Math.abs(x-player.x)<20) {
             gravityDirection *= -1;
+            o.used = true;
         }
 
-        if (o.type === "portalS" && Math.abs(x - player.x) < 20) {
+        if (o.type === "portalS" && !o.used && Math.abs(x-player.x)<20) {
             speed = o.speed;
+            speedTimer = 300;
+            o.used = true;
         }
     }
 }
@@ -300,67 +271,77 @@ function checkCollision() {
 function endGame() {
     crashSound.volume = sfxVolume;
     crashSound.play();
-    backToMenu();
+    spawnParticles();
+    gameState = STATE.MENU;
+    music.pause();
+    document.getElementById("menu").classList.add("active");
 }
 
 /* ===================== DRAW ===================== */
+function drawProgress() {
+    const p = Math.min(scrollX / LEVEL_LENGTH, 1);
+    ctx.fillStyle = "#222";
+    ctx.fillRect(0,0,canvas.width,6);
+    ctx.fillStyle = "#00ffff";
+    ctx.fillRect(0,0,canvas.width*p,6);
+}
+
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // Ground
-    ctx.fillStyle = "#00ffff";
+    drawProgress();
+
+    ctx.fillStyle="#00ffff";
     ctx.fillRect(0,260,canvas.width,4);
     ctx.fillRect(0,0,canvas.width,4);
 
-    // Player
     ctx.save();
-    ctx.translate(player.x + 15, player.y + 15);
+    ctx.translate(player.x+15, player.y+15);
     ctx.rotate(player.rotation);
-    ctx.fillStyle = "#ff00ff";
+    ctx.fillStyle="#ff00ff";
     ctx.fillRect(-15,-15,30,30);
     ctx.restore();
 
-    // Level
     for (let o of level) {
         let x = o.x - scrollX;
 
-        if (o.type === "block") {
-            ctx.fillStyle = "#ff0000";
-            ctx.fillRect(x, 260 - o.h, 40, o.h);
+        if (o.type==="block") {
+            ctx.fillStyle="#ff0000";
+            ctx.fillRect(x,260-o.h,40,o.h);
         }
-
-        if (o.type === "spike") {
-            ctx.fillStyle = "#ffff00";
+        if (o.type==="spike") {
+            ctx.fillStyle="#ffff00";
             ctx.beginPath();
             ctx.moveTo(x,260);
             ctx.lineTo(x+15,230);
             ctx.lineTo(x+30,260);
             ctx.fill();
         }
-
-        if (o.type === "portalG") {
-            ctx.strokeStyle = "#00ff00";
+        if (o.type==="portalG") {
+            ctx.strokeStyle="#00ff00";
             ctx.strokeRect(x,180,30,60);
         }
-
-        if (o.type === "portalS") {
-            ctx.strokeStyle = "#ff00ff";
+        if (o.type==="portalS") {
+            ctx.strokeStyle="#ff00ff";
             ctx.strokeRect(x,180,30,60);
         }
     }
+
+    ctx.fillStyle="#ff00ff";
+    particles.forEach(p => ctx.fillRect(p.x,p.y,4,4));
 }
 
 /* ===================== LOOP ===================== */
 function loop() {
-    if (gameRunning && !paused) {
+    if (gameState === STATE.PLAY) {
         updatePlayer();
         updateLevel();
+        updateParticles();
         checkCollision();
         draw();
     }
     requestAnimationFrame(loop);
 }
-
 loop();
 </script>
 </body>
