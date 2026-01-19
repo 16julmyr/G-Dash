@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<title>Geometry Dash Mini+</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    body {
+        margin: 0;
+        background: radial-gradient(circle at top, #222, #000);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        font-family: Arial, sans-serif;
+        color: white;
+        overflow: hidden;
+    }
+    canvas {
+        background: linear-gradient(#1a1a1a, #000);
+        border: 3px solid #0ff;
+        max-width: 100%;
+        touch-action: manipulation;
+    }
+    #info {
+        position: absolute;
+        top: 10px;
+        width: 100%;
+        text-align: center;
+        font-size: 16px;
+        opacity: 0.9;
+    }
+</style>
+</head>
+<body>
+
+<div id="info">Trykk / Space / Touch for å hoppe</div>
+<canvas id="game" width="800" height="300"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let gravity = 0.6;
+let jumpPower = -12;
+let baseSpeed = 4;
+let speed = baseSpeed;
+let gameOver = false;
+let score = 0;
+let level = 1;
+let highscore = localStorage.getItem("gd_highscore") || 0;
+
+// 🔊 LYD
+const jumpSound = new Audio("https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg");
+const crashSound = new Audio("https://actions.google.com/sounds/v1/cartoon/clang_and_wobble.ogg");
+const music = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_75e8c8f6d7.mp3");
+music.loop = true;
+music.volume = 0.3;
+
+const player = {
+    x: 80,
+    y: 220,
+    size: 30,
+    yVel: 0,
+    onGround: true,
+    rotation: 0
+};
+
+let obstacles = [];
+
+function spawnObstacle() {
+    const type = Math.random();
+    if (type < 0.5) {
+        // Normal blokk
+        obstacles.push({
+            type: "block",
+            x: canvas.width,
+            y: 240,
+            w: 30,
+            h: 40
+        });
+    } else {
+        // Spiss trekant
+        obstacles.push({
+            type: "spike",
+            x: canvas.width,
+            y: 260,
+            size: 30
+        });
+    }
+}
+
+function resetGame() {
+    obstacles = [];
+    player.y = 220;
+    player.yVel = 0;
+    player.rotation = 0;
+    gameOver = false;
+    score = 0;
+    level = 1;
+    speed = baseSpeed;
+    music.currentTime = 0;
+    music.play();
+}
+
+function jump() {
+    if (player.onGround && !gameOver) {
+        player.yVel = jumpPower;
+        player.onGround = false;
+        jumpSound.play();
+    }
+    if (gameOver) resetGame();
+}
+
+document.addEventListener("keydown", e => {
+    if (e.code === "Space") jump();
+});
+canvas.addEventListener("mousedown", jump);
+canvas.addEventListener("touchstart", jump);
+
+function update() {
+    if (gameOver) return;
+
+    // Level progression
+    level = Math.floor(score / 500) + 1;
+    speed = baseSpeed + level * 0.5;
+
+    // Player physics
+    player.yVel += gravity;
+    player.y += player.yVel;
+    player.rotation += 0.15;
+
+    if (player.y >= 220) {
+        player.y = 220;
+        player.yVel = 0;
+        player.onGround = true;
+        player.rotation = 0;
+    }
+
+    obstacles.forEach(o => o.x -= speed);
+    obstacles = obstacles.filter(o => o.x + 50 > 0);
+
+    if (Math.random() < 0.02) spawnObstacle();
+
+    // Collision
+    obstacles.forEach(o => {
+        if (o.type === "block") {
+            if (
+                player.x < o.x + o.w &&
+                player.x + player.size > o.x &&
+                player.y < o.y + o.h &&
+                player.y + player.size > o.y
+            ) endGame();
+        } else {
+            if (
+                player.x + player.size > o.x &&
+                player.x < o.x + o.size &&
+                player.y + player.size > o.y - o.size
+            ) endGame();
+        }
+    });
+
+    score++;
+}
+
+function endGame() {
+    gameOver = true;
+    crashSound.play();
+    music.pause();
+    if (score > highscore) {
+        highscore = score;
+        localStorage.setItem("gd_highscore", highscore);
+    }
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Ground
+    ctx.fillStyle = "#0ff";
+    ctx.fillRect(0, 260, canvas.width, 5);
+
+    // Player (roterende kube)
+    ctx.save();
+    ctx.translate(player.x + player.size/2, player.y + player.size/2);
+    ctx.rotate(player.rotation);
+    ctx.fillStyle = "#f0f";
+    ctx.fillRect(-15, -15, 30, 30);
+    ctx.restore();
+
+    // Obstacles
+    obstacles.forEach(o => {
+        if (o.type === "block") {
+            ctx.fillStyle = "#f00";
+            ctx.fillRect(o.x, o.y, o.w, o.h);
+        } else {
+            ctx.fillStyle = "#ff0";
+            ctx.beginPath();
+            ctx.moveTo(o.x, o.y);
+            ctx.lineTo(o.x + o.size/2, o.y - o.size);
+            ctx.lineTo(o.x + o.size, o.y);
+            ctx.closePath();
+            ctx.fill();
+        }
+    });
+
+    // HUD
+    ctx.fillStyle = "#fff";
+    ctx.fillText("Score: " + score, 10, 20);
+    ctx.fillText("Level: " + level, 10, 40);
+    ctx.fillText("Highscore: " + highscore, 10, 60);
+
+    if (gameOver) {
+        ctx.font = "30px Arial";
+        ctx.fillText("GAME OVER", 300, 140);
+        ctx.font = "16px Arial";
+        ctx.fillText("Trykk for å starte på nytt", 300, 170);
+    }
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+music.play();
+loop();
+</script>
+</body>
+</html>
